@@ -1,0 +1,17 @@
+# =============================================================================
+# Wikirace — Dependências do Projeto
+# =============================================================================
+# Instale com:  pip install -r requirements.txt
+# Recomendado:  criar um ambiente virtual antes (python -m venv venv)
+# =============================================================================
+
+# --- Rede e Assincronismo (Membro A) -----------------------------------------
+aiohttp>=3.9.0          # Cliente HTTP assíncrono (requisições à API da Wikipedia)
+
+# --- Grafos e Visualização (Membro B) ----------------------------------------
+networkx>=3.3           # Construção e manipulação do grafo (DiGraph)
+pyvis>=0.3.2            # Renderização do HTML interativo a partir do NetworkX
+
+# --- Testes ------------------------------------------------------------------
+pytest>=8.0.0           # Framework de testes
+pytest-asyncio>=0.23.0  # Suporte a corrotinas async nos testes (AsyncMock + await)
