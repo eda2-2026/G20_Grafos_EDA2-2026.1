@@ -30,7 +30,6 @@ from typing import Optional
 # "mockadas" via unittest.mock.patch.
 # ---------------------------------------------------------------------------
 from src.wiki_client import get_backlinks, get_outlinks
-from src.models import Node
 
 logger = logging.getLogger(__name__)
 
@@ -106,52 +105,6 @@ async def _fetch_backlinks_cached(
 # ===========================================================================
 # Expansão de nível (fronteira completa de um lado da busca)
 # ===========================================================================
-
-async def _expand_level(
-    frontier: deque[str],
-    visited: dict[str, Optional[str]],
-    fetch_fn,               # Callable assíncrono: (title, cache, sem) -> list[str]
-    cache: dict[str, list[str]],
-    sem: asyncio.Semaphore,
-) -> list[str]:
-    """Expande **todos** os nós presentes na fronteira atual simultaneamente.
-
-    Cada nó do nível corrente é expandido via asyncio.gather, respeitando o
-    Semáforo para limitar a concorrência. Novos nós descobertos são
-    adicionados à fronteira e ao mapa de pais (visited).
-
-    Args:
-        frontier: Fila (deque) da fronteira atual. Será esvaziada e
-                  preenchida com os nós do próximo nível.
-        visited:  Mapa { título → pai } para controle de visitação e
-                  reconstrução do caminho.
-        fetch_fn: Função assíncrona de busca de vizinhos
-                  (outlinks ou backlinks).
-        cache:    Dicionário de cache correspondente a fetch_fn.
-        sem:      Semáforo de controle de concorrência.
-
-    Returns:
-        Lista de títulos dos nós **novos** descobertos neste nível.
-    """
-    # Captura todos os nós do nível atual de uma só vez
-    current_level: list[str] = list(frontier)
-    frontier.clear()
-
-    # Dispara todas as buscas em paralelo
-    results: list[list[str]] = await asyncio.gather(
-        *[fetch_fn(title, cache, sem) for title in current_level],
-        return_exceptions=False,
-    )
-
-    newly_discovered: list[str] = []
-    for neighbors in results:
-        for neighbor in neighbors:
-            if neighbor not in visited:
-                visited[neighbor] = None  # pai ainda desconhecido neste passo
-                newly_discovered.append(neighbor)
-                frontier.append(neighbor)
-
-    return newly_discovered
 
 
 async def _expand_level_with_parents(
