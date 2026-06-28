@@ -6,6 +6,7 @@ Testes unitários para o cliente HTTP assíncrono (src.wiki_client).
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncio
 import aiohttp
 import pytest
 
@@ -13,8 +14,8 @@ from src.config import MAX_BACKLINKS
 from src.wiki_client import (
     _make_api_request,
     close_session,
-    get_backlinks,
-    get_outlinks,
+    get_backlinks_batch,
+    get_outlinks_batch,
 )
 
 
@@ -24,8 +25,8 @@ async def cleanup_session():
     await close_session()
 
 
-async def test_get_outlinks_pagination():
-    """Verifica se get_outlinks consome páginas subsequentes quando a API retorna 'continue'."""
+async def test_get_outlinks_batch_pagination():
+    """Verifica se get_outlinks_batch consome páginas subsequentes quando a API retorna 'continue'."""
     page1_resp = {
         "query": {
             "pages": {
@@ -49,15 +50,16 @@ async def test_get_outlinks_pagination():
     }
 
     mock_make_req = AsyncMock(side_effect=[page1_resp, page2_resp])
+    sem = asyncio.Semaphore(1)
 
     with patch("src.wiki_client._make_api_request", mock_make_req):
-        links = await get_outlinks("Banana")
+        outlinks = await get_outlinks_batch(["Banana"], sem)
 
-    assert links == ["Fruta", "Planta", "Torta"]
+    assert outlinks["Banana"] == ["Fruta", "Planta", "Torta"]
     assert mock_make_req.call_count == 2
 
 
-async def test_get_outlinks_namespace_filtering():
+async def test_get_outlinks_batch_namespace_filtering():
     """Verifica se links fora do namespace 0 são descartados."""
     api_resp = {
         "query": {
@@ -74,35 +76,42 @@ async def test_get_outlinks_namespace_filtering():
         }
     }
 
+    sem = asyncio.Semaphore(1)
     with patch(
         "src.wiki_client._make_api_request", AsyncMock(return_value=api_resp)
     ):
-        links = await get_outlinks("Artigo")
+        outlinks = await get_outlinks_batch(["Artigo"], sem)
 
-    assert links == ["ArtigoValido", "OutroValido"]
+    assert outlinks["Artigo"] == ["ArtigoValido", "OutroValido"]
 
 
-async def test_get_backlinks_limit_and_no_pagination():
-    """Verifica se get_backlinks passa bllimit correto e faz apenas 1 requisição."""
+async def test_get_backlinks_batch_limit_and_no_pagination():
+    """Verifica se get_backlinks_batch passa lhlimit correto e faz apenas 1 requisição por chunk."""
     api_resp = {
         "query": {
-            "backlinks": [
-                {"ns": 0, "title": "Origem1"},
-                {"ns": 0, "title": "Origem2"},
-            ]
+            "pages": {
+                "1": {
+                    "title": "Destino",
+                    "linkshere": [
+                        {"ns": 0, "title": "Origem1"},
+                        {"ns": 0, "title": "Origem2"},
+                    ]
+                }
+            }
         }
     }
 
     mock_make_req = AsyncMock(return_value=api_resp)
+    sem = asyncio.Semaphore(1)
 
     with patch("src.wiki_client._make_api_request", mock_make_req):
-        backlinks = await get_backlinks("Destino")
+        backlinks = await get_backlinks_batch(["Destino"], sem)
 
-    assert backlinks == ["Origem1", "Origem2"]
+    assert backlinks["Destino"] == ["Origem1", "Origem2"]
     assert mock_make_req.call_count == 1
     call_args = mock_make_req.call_args[0][0]
-    assert call_args["bllimit"] == MAX_BACKLINKS
-    assert call_args["list"] == "backlinks"
+    assert call_args["lhlimit"] == MAX_BACKLINKS
+    assert call_args["prop"] == "linkshere"
 
 
 async def test_make_api_request_retry_success():
