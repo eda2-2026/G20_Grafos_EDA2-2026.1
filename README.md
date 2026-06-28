@@ -4,7 +4,16 @@ Projeto academico da disciplina de Estruturas de Dados 2. Trata-se de um explora
 
 ## Demonstração Visual
 
-[![]()]
+**Apresentação e Demonstração do Projeto (Vídeo):** [Link do YouTube]()
+
+### 1. Terminal (Estatísticas e Execução)
+![Execução no Terminal](examples/terminal.png)
+
+### 2. Grafo do Caminho (Rota mais curta)
+![Grafo Caminho](examples/caminho.png)
+
+### 3. Grafo de Exploração (Nós visitados)
+![Grafo Exploração](examples/exploracao.png)
 
 ## Alunos
 | Matrícula | Aluno |
@@ -22,11 +31,11 @@ Devido ao alto fator de ramificacao da Wikipedia (onde um unico artigo pode cont
 
 O projeto esta modularizado em responsabilidades estritas:
 
-* config.py: Centraliza variaveis de ambiente, URLs da API, limites de concorrencia e politicas de timeout e retry.
+* config.py: Centraliza variaveis de ambiente, URLs da API, limites de concorrencia (semaforos) e politicas de timeout, retry e delays (rate limiting).
 * models.py: Contem as estruturas de dados (dataclasses) utilizadas, como os Nos do grafo.
-* wiki_client.py: Modulo puramente de rede. Lida com chamadas HTTP assincronas para a Wikipedia, limites de paginacao e tratamento de falhas.
-* wikirace_engine.py: O motor logico. Implementa o BFS Bidirecional, semaforos de concorrencia, deteccao de intersecao e camadas de cache para outlinks e backlinks.
-* visualizer.py: Exportador do grafo. Recebe a arvore percorrida e o caminho vencedor para renderizar um documento HTML interativo usando Pyvis.
+* wiki_client.py: Modulo puramente de rede. Lida com chamadas HTTP assincronas, limites de paginacao, tratamento de falhas, buscas em lote (batching) e mitigacao de bloqueios por limite de taxa (Global Lock anti-429).
+* wikirace_engine.py: O motor logico. Implementa o BFS Bidirecional otimizado para lotes, semaforos de concorrencia, deteccao de intersecao e camadas de cache in-memory para outlinks e backlinks.
+* visualizer.py: Exportador do grafo. Recebe a arvore percorrida e o caminho vencedor para renderizar um documento HTML interativo usando Pyvis com layout radial.
 
 ## Dependencias
 
@@ -68,9 +77,12 @@ Passe o artigo de **origem** e o artigo de **destino** entre aspas como argument
 python main.py "Banana" "Física quântica"
 ```
 
-> **Dica:** Adicione a flag `-v` (verbose) para acompanhar o progresso das requisições em tempo real no nível DEBUG:
+> **Dicas Adicionais:**
+> - Adicione a flag `-v` (verbose) para acompanhar o progresso das requisições em tempo real no nível DEBUG.
+> - Adicione a flag `-d <num>` ou `--max-depth <num>` para aumentar a profundidade de exibição na árvore de exploração (o padrão é 1 para economizar memória, mas pode ser aumentado para exibir mais nós gerados durante a busca).
+>
 > ```bash
-> python main.py -v "Banana" "Física quântica"
+> python main.py -v -d 2 "Banana" "Física quântica"
 > ```
 
 ### 5. Visualizar os Grafos Interativos

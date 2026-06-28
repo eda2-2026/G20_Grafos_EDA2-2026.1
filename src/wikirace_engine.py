@@ -29,7 +29,8 @@ from typing import Optional
 # o wiki_client.py estiver pronto. Durante os testes, estas funções são
 # "mockadas" via unittest.mock.patch.
 # ---------------------------------------------------------------------------
-from src.wiki_client import get_backlinks, get_outlinks
+from src.wiki_client import get_backlinks_batch, get_outlinks_batch
+from src.config import SEMAPHORE_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Constantes de configuração local do motor.
 # Podem ser sobrescritas via src/config.py quando o Membro A finalizar.
 # ---------------------------------------------------------------------------
-_DEFAULT_CONCURRENCY: int = 20   # Conexões simultâneas máximas
+_DEFAULT_CONCURRENCY: int = SEMAPHORE_LIMIT   # Conexões simultâneas máximas
 _MAX_DEPTH: int = 6              # Profundidade máxima de cada lado da busca
 
 
@@ -45,61 +46,34 @@ _MAX_DEPTH: int = 6              # Profundidade máxima de cada lado da busca
 # Funções auxiliares de cache
 # ===========================================================================
 
-async def _fetch_outlinks_cached(
-    title: str,
+async def _fetch_outlinks_cached_batch(
+    titles: list[str],
     cache: dict[str, list[str]],
     sem: asyncio.Semaphore,
-) -> list[str]:
-    """Retorna os links de saída de *title*, usando o cache quando disponível.
-
-    Args:
-        title:  Título do artigo da Wikipedia.
-        cache:  Dicionário de cache compartilhado para outlinks.
-        sem:    Semáforo que limita as requisições simultâneas.
-
-    Returns:
-        Lista de títulos dos artigos para os quais *title* aponta.
-    """
-    if title in cache:
-        logger.debug("Cache HIT outlinks: %s", title)
-        return cache[title]
-
-    logger.debug("Cache MISS outlinks: %s", title)
-    async with sem:
-        links = await get_outlinks(title)
-
-    cache[title] = links
-    return links
+) -> None:
+    """Retorna os links de saída para múltiplos títulos em lote e popula o cache."""
+    to_fetch = [t for t in titles if t not in cache]
+    if to_fetch:
+        logger.debug("Cache MISS outlinks: %d nós. Buscando em lote...", len(to_fetch))
+        results = await get_outlinks_batch(to_fetch, sem)
+        cache.update(results)
+    else:
+        logger.debug("Cache HIT outlinks para todos %d nós deste nível.", len(titles))
 
 
-async def _fetch_backlinks_cached(
-    title: str,
+async def _fetch_backlinks_cached_batch(
+    titles: list[str],
     cache: dict[str, list[str]],
     sem: asyncio.Semaphore,
-) -> list[str]:
-    """Retorna os links de entrada de *title*, usando o cache quando disponível.
-
-    O Membro A já limita a quantidade de backlinks retornados pela API para
-    evitar explosão de memória em artigos muito populares.
-
-    Args:
-        title:  Título do artigo da Wikipedia.
-        cache:  Dicionário de cache compartilhado para backlinks.
-        sem:    Semáforo que limita as requisições simultâneas.
-
-    Returns:
-        Lista de títulos dos artigos que apontam para *title*.
-    """
-    if title in cache:
-        logger.debug("Cache HIT backlinks: %s", title)
-        return cache[title]
-
-    logger.debug("Cache MISS backlinks: %s", title)
-    async with sem:
-        links = await get_backlinks(title)
-
-    cache[title] = links
-    return links
+) -> None:
+    """Retorna os links de entrada para múltiplos títulos em lote e popula o cache."""
+    to_fetch = [t for t in titles if t not in cache]
+    if to_fetch:
+        logger.debug("Cache MISS backlinks: %d nós. Buscando em lote...", len(to_fetch))
+        results = await get_backlinks_batch(to_fetch, sem)
+        cache.update(results)
+    else:
+        logger.debug("Cache HIT backlinks para todos %d nós deste nível.", len(titles))
 
 
 # ===========================================================================
@@ -110,11 +84,11 @@ async def _fetch_backlinks_cached(
 async def _expand_level_with_parents(
     frontier: deque[str],
     visited: dict[str, Optional[str]],
-    fetch_fn,
+    fetch_batch_fn,
     cache: dict[str, list[str]],
     sem: asyncio.Semaphore,
 ) -> None:
-    """Igual a _expand_level, mas registra corretamente o pai de cada nó novo.
+    """Expande todos os nós do nível atual utilizando requisições em lote.
 
     Esta versão é usada durante a busca real pois o mapa de pais precisa ser
     preenchido para que a reconstrução de caminho funcione.
@@ -122,12 +96,12 @@ async def _expand_level_with_parents(
     current_level: list[str] = list(frontier)
     frontier.clear()
 
-    results: list[list[str]] = await asyncio.gather(
-        *[fetch_fn(title, cache, sem) for title in current_level],
-        return_exceptions=False,
-    )
+    # Dispara a busca em lote, que popula o dicionário 'cache' in-place
+    await fetch_batch_fn(current_level, cache, sem)
 
-    for parent_title, neighbors in zip(current_level, results):
+    # Processa os resultados diretamente do cache
+    for parent_title in current_level:
+        neighbors = cache.get(parent_title, [])
         for neighbor in neighbors:
             if neighbor not in visited:
                 visited[neighbor] = parent_title   # registra o pai real
@@ -264,7 +238,7 @@ async def bidirectional_bfs(
             )
             await _expand_level_with_parents(
                 frontier_fwd, parents_fwd,
-                _fetch_outlinks_cached, cache_outlinks, sem,
+                _fetch_outlinks_cached_batch, cache_outlinks, sem,
             )
             depth_fwd += 1
 
@@ -285,7 +259,7 @@ async def bidirectional_bfs(
             )
             await _expand_level_with_parents(
                 frontier_bwd, parents_bwd,
-                _fetch_backlinks_cached, cache_backlinks, sem,
+                _fetch_backlinks_cached_batch, cache_backlinks, sem,
             )
             depth_bwd += 1
 

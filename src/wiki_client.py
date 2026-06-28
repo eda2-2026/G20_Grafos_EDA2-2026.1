@@ -21,11 +21,13 @@ from src.config import (
     REQUEST_TIMEOUT,
     RETRY_DELAYS,
     USER_AGENT,
+    POLITE_DELAY,
 )
 
 logger = logging.getLogger(__name__)
 
 _session: Optional[aiohttp.ClientSession] = None
+_request_lock = asyncio.Lock()
 
 
 async def get_session() -> aiohttp.ClientSession:
@@ -66,6 +68,8 @@ async def _make_api_request(params: dict) -> dict:
 
     for attempt in range(MAX_RETRIES + 1):
         try:
+            async with _request_lock:
+                await asyncio.sleep(POLITE_DELAY)
             async with session.get(API_URL, params=req_params) as response:
                 if response.status in (429, 500, 502, 503):
                     if attempt < MAX_RETRIES:
@@ -120,69 +124,97 @@ async def _make_api_request(params: dict) -> dict:
     raise RuntimeError("Falha desconhecida ao realizar requisição HTTP.")
 
 
-async def get_outlinks(title: str) -> list[str]:
-    """Obtém todos os links de saída (outlinks) de um artigo da Wikipédia.
+async def get_outlinks_batch(titles: list[str], sem: asyncio.Semaphore) -> dict[str, list[str]]:
+    """Obtém outlinks para múltiplos artigos da Wikipédia em lote.
 
-    Lida automaticamente com paginação caso o artigo possua mais de 500 links.
-    Retorna apenas links para artigos do namespace 0 (artigos principais).
+    Agrupa requisições de 50 em 50 títulos (limite da API).
 
     Args:
-        title: Título do artigo.
+        titles: Lista de títulos.
+        sem:    Semáforo para limitar concorrência das chunks.
 
     Returns:
-        Lista de títulos dos artigos para os quais este artigo aponta.
+        Dicionário mapeando {título: [lista_de_outlinks]}.
     """
-    outlinks: list[str] = []
-    params: dict[str, str | int] = {
-        "action": "query",
-        "prop": "links",
-        "titles": title,
-        "plnamespace": 0,
-        "pllimit": 500,
-    }
+    outlinks = {t: [] for t in titles}
+    chunks = [titles[i : i + 50] for i in range(0, len(titles), 50)]
+    total_chunks = len(chunks)
+    completed_chunks = 0
 
-    while True:
-        data = await _make_api_request(params)
-        pages = data.get("query", {}).get("pages", {})
+    async def fetch_chunk(chunk: list[str]) -> None:
+        nonlocal completed_chunks
+        async with sem:
+            params: dict[str, str | int] = {
+                "action": "query",
+                "prop": "links",
+                "titles": "|".join(chunk),
+                "plnamespace": 0,
+                "pllimit": 500,
+            }
+            while True:
+                data = await _make_api_request(params)
+                pages = data.get("query", {}).get("pages", {})
+                for page in pages.values():
+                    title = page.get("title", "")
+                    if title in outlinks:
+                        for link in page.get("links", []):
+                            if link.get("ns") == 0:
+                                outlinks[title].append(link.get("title", ""))
+                cont = data.get("continue")
+                if cont and isinstance(cont, dict):
+                    params.update(cont)
+                else:
+                    break
+        completed_chunks += 1
+        if completed_chunks % max(1, total_chunks // 4) == 0 or completed_chunks == total_chunks:
+            logger.debug(f"  [Outlinks] Chunks processados: {completed_chunks}/{total_chunks}")
 
-        for page in pages.values():
-            for link in page.get("links", []):
-                if link.get("ns") == 0:
-                    outlinks.append(link.get("title", ""))
-
-        cont = data.get("continue")
-        if cont and isinstance(cont, dict):
-            params.update(cont)
-        else:
-            break
+    if chunks:
+        await asyncio.gather(*[fetch_chunk(c) for c in chunks])
 
     return outlinks
 
 
-async def get_backlinks(title: str) -> list[str]:
-    """Obtém os links de entrada (backlinks) para um artigo da Wikipédia.
+async def get_backlinks_batch(titles: list[str], sem: asyncio.Semaphore) -> dict[str, list[str]]:
+    """Obtém backlinks para múltiplos artigos da Wikipédia em lote.
 
-    Não realiza paginação, respeitando o limite máximo de MAX_BACKLINKS.
+    Agrupa requisições de 50 em 50 títulos (limite da API).
 
     Args:
-        title: Título do artigo de destino.
+        titles: Lista de títulos de destino.
+        sem:    Semáforo para limitar concorrência das chunks.
 
     Returns:
-        Lista de títulos dos artigos que apontam para este artigo.
+        Dicionário mapeando {título: [lista_de_backlinks]}.
     """
-    params: dict[str, str | int] = {
-        "action": "query",
-        "list": "backlinks",
-        "bltitle": title,
-        "blnamespace": 0,
-        "bllimit": MAX_BACKLINKS,
-    }
+    backlinks = {t: [] for t in titles}
+    chunks = [titles[i : i + 50] for i in range(0, len(titles), 50)]
+    total_chunks = len(chunks)
+    completed_chunks = 0
 
-    data = await _make_api_request(params)
-    backlinks_data = data.get("query", {}).get("backlinks", [])
+    async def fetch_chunk(chunk: list[str]) -> None:
+        nonlocal completed_chunks
+        async with sem:
+            params: dict[str, str | int] = {
+                "action": "query",
+                "prop": "linkshere",
+                "titles": "|".join(chunk),
+                "lhnamespace": 0,
+                "lhlimit": MAX_BACKLINKS,
+            }
+            data = await _make_api_request(params)
+            pages = data.get("query", {}).get("pages", {})
+            for page in pages.values():
+                title = page.get("title", "")
+                if title in backlinks:
+                    for link in page.get("linkshere", []):
+                        if link.get("ns") == 0 or "ns" not in link:
+                            backlinks[title].append(link.get("title", ""))
+        completed_chunks += 1
+        if completed_chunks % max(1, total_chunks // 4) == 0 or completed_chunks == total_chunks:
+            logger.debug(f"  [Backlinks] Chunks processados: {completed_chunks}/{total_chunks}")
 
-    return [
-        bl.get("title", "")
-        for bl in backlinks_data
-        if bl.get("ns") == 0 or "ns" not in bl
-    ]
+    if chunks:
+        await asyncio.gather(*[fetch_chunk(c) for c in chunks])
+
+    return backlinks

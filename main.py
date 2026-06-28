@@ -41,6 +41,13 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Habilita modo de log detalhado (DEBUG)",
     )
+    parser.add_argument(
+        "-d",
+        "--max-depth",
+        type=int,
+        default=1,
+        help="Profundidade máxima dos nós exibidos na Árvore de Exploração (padrão: 1)",
+    )
     return parser.parse_args()
 
 
@@ -107,7 +114,7 @@ async def async_main() -> None:
     tree_html = None
     if path:
         path_html = render_path_only(path, parents_fwd, parents_bwd)
-        tree_html = render_exploration_tree(path, parents_fwd, parents_bwd)
+        tree_html = render_exploration_tree(path, parents_fwd, parents_bwd, max_display_depth=args.max_depth)
 
     # Cálculo das estatísticas finais
     total_nodes = len(set(parents_fwd.keys()) | set(parents_bwd.keys()))

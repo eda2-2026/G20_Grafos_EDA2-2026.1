@@ -29,16 +29,16 @@ from tests.conftest import ORIGIN, DESTINATION, OUTLINKS_MAP, BACKLINKS_MAP
 # ---------------------------------------------------------------------------
 
 def _make_outlinks_mock(outlinks_map: dict[str, list[str]]) -> AsyncMock:
-    """Cria um AsyncMock que simula get_outlinks usando o mapa fornecido."""
-    async def _mock(title: str) -> list[str]:
-        return outlinks_map.get(title, [])
+    """Cria um AsyncMock que simula get_outlinks_batch usando o mapa fornecido."""
+    async def _mock(titles: list[str], sem) -> dict[str, list[str]]:
+        return {t: outlinks_map.get(t, []) for t in titles}
     return AsyncMock(side_effect=_mock)
 
 
 def _make_backlinks_mock(backlinks_map: dict[str, list[str]]) -> AsyncMock:
-    """Cria um AsyncMock que simula get_backlinks usando o mapa fornecido."""
-    async def _mock(title: str) -> list[str]:
-        return backlinks_map.get(title, [])
+    """Cria um AsyncMock que simula get_backlinks_batch usando o mapa fornecido."""
+    async def _mock(titles: list[str], sem) -> dict[str, list[str]]:
+        return {t: backlinks_map.get(t, []) for t in titles}
     return AsyncMock(side_effect=_mock)
 
 
@@ -52,8 +52,8 @@ async def test_finds_optimal_path(simple_outlinks, simple_backlinks, expected_pa
     mock_back = _make_backlinks_mock(simple_backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, _, _ = await bidirectional_bfs(ORIGIN, DESTINATION)
 
@@ -68,8 +68,8 @@ async def test_path_length_is_correct(simple_outlinks, simple_backlinks, expecte
     mock_back = _make_backlinks_mock(simple_backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, _, _ = await bidirectional_bfs(ORIGIN, DESTINATION)
 
@@ -85,8 +85,8 @@ async def test_direct_neighbors():
     mock_back = _make_backlinks_mock(backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, _, _ = await bidirectional_bfs("Origem", "Destino")
 
@@ -109,8 +109,8 @@ async def test_no_path_within_depth_limit():
     mock_back = _make_backlinks_mock(backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, _, _ = await bidirectional_bfs("Origem", "Destino", max_depth=2)
 
@@ -125,8 +125,8 @@ async def test_path_starts_with_origin_and_ends_with_destination(
     mock_back = _make_backlinks_mock(simple_backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, _, _ = await bidirectional_bfs(ORIGIN, DESTINATION)
 
@@ -140,8 +140,8 @@ async def test_returns_parents_maps(simple_outlinks, simple_backlinks):
     mock_back = _make_backlinks_mock(simple_backlinks)
 
     with (
-        patch("src.wikirace_engine.get_outlinks", mock_out),
-        patch("src.wikirace_engine.get_backlinks", mock_back),
+        patch("src.wikirace_engine.get_outlinks_batch", mock_out),
+        patch("src.wikirace_engine.get_backlinks_batch", mock_back),
     ):
         path, parents_fwd, parents_bwd = await bidirectional_bfs(ORIGIN, DESTINATION)
 
