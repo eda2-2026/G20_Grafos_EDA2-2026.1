@@ -31,11 +31,11 @@ Devido ao alto fator de ramificacao da Wikipedia (onde um unico artigo pode cont
 
 O projeto esta modularizado em responsabilidades estritas:
 
-* config.py: Centraliza variaveis de ambiente, URLs da API, limites de concorrencia e politicas de timeout e retry.
+* config.py: Centraliza variaveis de ambiente, URLs da API, limites de concorrencia (semaforos) e politicas de timeout, retry e delays (rate limiting).
 * models.py: Contem as estruturas de dados (dataclasses) utilizadas, como os Nos do grafo.
-* wiki_client.py: Modulo puramente de rede. Lida com chamadas HTTP assincronas para a Wikipedia, limites de paginacao e tratamento de falhas.
-* wikirace_engine.py: O motor logico. Implementa o BFS Bidirecional, semaforos de concorrencia, deteccao de intersecao e camadas de cache para outlinks e backlinks.
-* visualizer.py: Exportador do grafo. Recebe a arvore percorrida e o caminho vencedor para renderizar um documento HTML interativo usando Pyvis.
+* wiki_client.py: Modulo puramente de rede. Lida com chamadas HTTP assincronas, limites de paginacao, tratamento de falhas, buscas em lote (batching) e mitigacao de bloqueios por limite de taxa (Global Lock anti-429).
+* wikirace_engine.py: O motor logico. Implementa o BFS Bidirecional otimizado para lotes, semaforos de concorrencia, deteccao de intersecao e camadas de cache in-memory para outlinks e backlinks.
+* visualizer.py: Exportador do grafo. Recebe a arvore percorrida e o caminho vencedor para renderizar um documento HTML interativo usando Pyvis com layout radial.
 
 ## Dependencias
 
