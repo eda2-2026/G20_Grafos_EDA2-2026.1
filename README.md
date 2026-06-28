@@ -4,7 +4,16 @@ Projeto academico da disciplina de Estruturas de Dados 2. Trata-se de um explora
 
 ## Demonstração Visual
 
-[![]()]
+**Apresentação e Demonstração do Projeto (Vídeo):** [Link do YouTube]()
+
+### 1. Terminal (Estatísticas e Execução)
+![Execução no Terminal](examples/terminal.png)
+
+### 2. Grafo do Caminho (Rota mais curta)
+![Grafo Caminho](examples/caminho.png)
+
+### 3. Grafo de Exploração (Nós visitados)
+![Grafo Exploração](examples/exploracao.png)
 
 ## Alunos
 | Matrícula | Aluno |
