@@ -68,9 +68,12 @@ Passe o artigo de **origem** e o artigo de **destino** entre aspas como argument
 python main.py "Banana" "Física quântica"
 ```
 
-> **Dica:** Adicione a flag `-v` (verbose) para acompanhar o progresso das requisições em tempo real no nível DEBUG:
+> **Dicas Adicionais:**
+> - Adicione a flag `-v` (verbose) para acompanhar o progresso das requisições em tempo real no nível DEBUG.
+> - Adicione a flag `-d <num>` ou `--max-depth <num>` para aumentar a profundidade de exibição na árvore de exploração (o padrão é 1 para economizar memória, mas pode ser aumentado para exibir mais nós gerados durante a busca).
+>
 > ```bash
-> python main.py -v "Banana" "Física quântica"
+> python main.py -v -d 2 "Banana" "Física quântica"
 > ```
 
 ### 5. Visualizar os Grafos Interativos
