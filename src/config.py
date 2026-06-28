@@ -21,4 +21,9 @@ RETRY_DELAYS = [1, 2, 4]
 MAX_BACKLINKS = 500
 
 # Limite de conexões simultâneas (utilizado pelo motor de busca)
-SEMAPHORE_LIMIT = 20
+# Reduzido de 20 para 5 para evitar bloqueios severos (HTTP 429) da Wikimedia.
+SEMAPHORE_LIMIT = 5
+
+# Atraso fixo (em segundos) antes de cada requisição para "esfriar" o tráfego
+POLITE_DELAY = 0.05
+
