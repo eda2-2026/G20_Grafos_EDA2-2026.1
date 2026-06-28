@@ -11,11 +11,11 @@ Responsabilidades:
   - Detectar a interseção entre os dois lados da busca e reconstruir o
     caminho completo (Origem → Interseção → Destino).
 
-Contrato com o Membro A (wiki_client.py):
+Dependências (wiki_client.py):
   - async def get_outlinks(title: str) -> list[str]
   - async def get_backlinks(title: str) -> list[str]
 
-Contrato com o Membro A (models.py):
+Dependências (models.py):
   - @dataclass class Node: title: str, parent: str | None, depth: int
 """
 
@@ -25,8 +25,8 @@ from collections import deque
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Importações do Membro A — serão substituídas pelos módulos reais quando
-# o wiki_client.py estiver pronto. Durante os testes, estas funções são
+# Importações do cliente da Wikipédia.
+# Durante os testes, estas funções são
 # "mockadas" via unittest.mock.patch.
 # ---------------------------------------------------------------------------
 from src.wiki_client import get_backlinks_batch, get_outlinks_batch
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constantes de configuração local do motor.
-# Podem ser sobrescritas via src/config.py quando o Membro A finalizar.
+# Podem ser sobrescritas via src/config.py.
 # ---------------------------------------------------------------------------
 _DEFAULT_CONCURRENCY: int = SEMAPHORE_LIMIT   # Conexões simultâneas máximas
 _MAX_DEPTH: int = 6              # Profundidade máxima de cada lado da busca
@@ -272,8 +272,11 @@ async def bidirectional_bfs(
                     )
                     return path, parents_fwd, parents_bwd
 
-        # Sem fronteira ativa: grafo desconexo dentro do limite de profundidade
-        if not frontier_fwd and not frontier_bwd:
+        # Condição de parada: se não puder expandir mais nenhum lado (seja
+        # porque a fronteira acabou ou o limite de profundidade foi atingido)
+        can_expand_fwd = bool(frontier_fwd) and depth_fwd < max_depth
+        can_expand_bwd = bool(frontier_bwd) and depth_bwd < max_depth
+        if not can_expand_fwd and not can_expand_bwd:
             break
 
     logger.warning(
@@ -285,7 +288,7 @@ async def bidirectional_bfs(
 
 
 # ===========================================================================
-# Estatísticas de execução (opcional — consumidas pelo main.py do Membro A)
+# Estatísticas de execução (opcional — consumidas pelo main.py)
 # ===========================================================================
 
 def get_cache_stats(

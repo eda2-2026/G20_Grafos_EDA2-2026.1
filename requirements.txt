@@ -5,10 +5,10 @@
 # Recomendado:  criar um ambiente virtual antes (python -m venv venv)
 # =============================================================================
 
-# --- Rede e Assincronismo (Membro A) -----------------------------------------
+# --- Rede e Assincronismo ----------------------------------------------------
 aiohttp>=3.9.0          # Cliente HTTP assíncrono (requisições à API da Wikipedia)
 
-# --- Grafos e Visualização (Membro B) ----------------------------------------
+# --- Grafos e Visualização ---------------------------------------------------
 networkx>=3.3           # Construção e manipulação do grafo (DiGraph)
 pyvis>=0.3.2            # Renderização do HTML interativo a partir do NetworkX
 

@@ -4,7 +4,7 @@ test_engine.py
 Testes do motor de busca bidirecional (wikirace_engine.bidirectional_bfs).
 
 Estratégia:
-  - As funções `get_outlinks` e `get_backlinks` do Membro A são substituídas
+  - As funções `get_outlinks` e `get_backlinks` do cliente da Wikipédia são substituídas
     por AsyncMock que retornam os dados do grafo fictício definido no conftest.
   - Isso garante que os testes rodem sem conexão de rede e de forma
     determinística, validando apenas a lógica algorítmica do BFS.
