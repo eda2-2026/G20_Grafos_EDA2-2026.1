@@ -136,26 +136,63 @@ def _get_node_style(category: str) -> tuple[str, int, str]:
 # Construção do grafo NetworkX
 # ===========================================================================
 
+def _depths_from_parents(
+    parents: dict[str, Optional[str]],
+    root: str,
+) -> dict[str, int]:
+    """Calcula a profundidade de cada nó a partir de ``root`` usando o mapa de pais.
+
+    Reconstrói as relações filho→pai em pai→filhos e executa uma BFS simples.
+
+    Args:
+        parents: Dict {filho: pai} gerado pelo BFS bidirecional.
+        root:    Raíz da árvore (origem ou destino).
+
+    Returns:
+        Dict {título: profundidade_inteira}.
+    """
+    children: dict[str, list[str]] = {}
+    for node, parent in parents.items():
+        if parent is not None:
+            children.setdefault(parent, []).append(node)
+        children.setdefault(node, [])
+
+    depths: dict[str, int] = {root: 0}
+    queue: list[str] = [root]
+    while queue:
+        node = queue.pop(0)
+        for child in children.get(node, []):
+            if child not in depths:
+                depths[child] = depths[node] + 1
+                queue.append(child)
+    return depths
+
+
 def _build_networkx_graph(
     path: list[str],
     parents_fwd: dict[str, Optional[str]],
     parents_bwd: dict[str, Optional[str]],
     show_path_only: bool,
+    max_display_depth: int = 1,
 ) -> tuple[nx.DiGraph, dict[str, str]]:
     """Constrói o grafo NetworkX a partir das estruturas do motor de busca.
 
     Args:
-        path:           Caminho mais curto encontrado pelo BFS bidirecional.
-        parents_fwd:    Mapa de pais FWD (origem → ...).
-        parents_bwd:    Mapa de pais BWD (destino → ...).
-        show_path_only: Se True, inclui apenas os nós do caminho vencedor.
-                        Se False, inclui todos os nós visitados.
+        path:              Caminho mais curto encontrado pelo BFS bidirecional.
+        parents_fwd:       Mapa de pais FWD (origem → ...).
+        parents_bwd:       Mapa de pais BWD (destino → ...).
+        show_path_only:    Se True, inclui apenas os nós do caminho vencedor.
+                           Se False, inclui os nós visitados até ``max_display_depth``.
+        max_display_depth: Profundidade máxima exibida na árvore de exploração.
+                           Nós mais distantes são omitidos para reduzir o tamanho
+                           do HTML. Nós do caminho vencedor são sempre mantidos.
 
     Returns:
         Tupla (grafo_direcionado, mapa_de_classificacao).
     """
     G = nx.DiGraph()
     classification = _classify_nodes(path, parents_fwd, parents_bwd)
+    path_set: set[str] = set(path)
 
     if show_path_only:
         # --- Modo 1: apenas o caminho mínimo ---
@@ -168,17 +205,29 @@ def _build_networkx_graph(
             G.add_edge(path[i], path[i + 1], color=COLOR_EDGE_PATH, width=4)
 
     else:
-        # --- Modo 2: árvore de exploração completa ---
+        # --- Modo 2: árvore de exploração com corte por profundidade ---
 
-        # Adiciona todos os nós FWD visitados
+        depth_fwd = _depths_from_parents(parents_fwd, path[0])
+        depth_bwd = _depths_from_parents(parents_bwd, path[-1])
+
+        def _within_depth(node: str) -> bool:
+            """Retorna True se o nó está dentro da profundidade máxima exibida."""
+            return (
+                node in path_set
+                or depth_fwd.get(node, 9999) <= max_display_depth
+                or depth_bwd.get(node, 9999) <= max_display_depth
+            )
+
+        # Adiciona nós FWD dentro do limite
         for node in parents_fwd:
-            cat = classification.get(node, "explored")
-            color, size, shape = _get_node_style(cat)
-            G.add_node(node, color=color, size=size, shape=shape, title=node)
+            if _within_depth(node):
+                cat = classification.get(node, "explored")
+                color, size, shape = _get_node_style(cat)
+                G.add_node(node, color=color, size=size, shape=shape, title=node)
 
-        # Adiciona todos os nós BWD visitados
+        # Adiciona nós BWD dentro do limite
         for node in parents_bwd:
-            if node not in G:
+            if _within_depth(node) and node not in G:
                 cat = classification.get(node, "explored")
                 color, size, shape = _get_node_style(cat)
                 G.add_node(node, color=color, size=size, shape=shape, title=node)
@@ -186,20 +235,17 @@ def _build_networkx_graph(
         # Arestas da árvore FWD (pai → filho)
         for child, parent in parents_fwd.items():
             if parent is not None and child in G and parent in G:
-                is_path_edge = (child in path and parent in path)
+                is_path_edge = (child in path_set and parent in path_set)
                 edge_color = COLOR_EDGE_PATH if is_path_edge else COLOR_EDGE_EXPLORED
                 edge_width = 4 if is_path_edge else 1
                 G.add_edge(parent, child, color=edge_color, width=edge_width)
 
-        # Arestas da árvore BWD (pai → filho, lembrando que BWD anda "ao contrário")
-        # No mapa BWD, o "pai" é o nó que veio depois na direção do destino.
-        # Portanto, a aresta real é: child → parent (BWD inverte a direção).
+        # Arestas da árvore BWD (sentido real: child → parent)
         for child, parent in parents_bwd.items():
             if parent is not None and child in G and parent in G:
-                is_path_edge = (child in path and parent in path)
+                is_path_edge = (child in path_set and parent in path_set)
                 edge_color = COLOR_EDGE_PATH if is_path_edge else COLOR_EDGE_EXPLORED
                 edge_width = 4 if is_path_edge else 1
-                # Aresta no sentido real do grafo: child aponta para parent
                 if not G.has_edge(child, parent):
                     G.add_edge(child, parent, color=edge_color, width=edge_width)
 
@@ -212,6 +258,14 @@ def _build_networkx_graph(
             else:
                 G.add_edge(src, dst, color=COLOR_EDGE_PATH, width=4)
 
+        omitted = (len(parents_fwd) + len(parents_bwd)) - len(G.nodes)
+        if omitted > 0:
+            logger.info(
+                "Profundidade máxima exibida: %d — %d nós omitidos (além do limite).",
+                max_display_depth,
+                omitted,
+            )
+
     return G, classification
 
 
@@ -219,8 +273,36 @@ def _build_networkx_graph(
 # Renderização com Pyvis
 # ===========================================================================
 
+def _compute_positions(
+    G: nx.DiGraph,
+    path: list[str],
+    show_path_only: bool,
+) -> dict[str, tuple[float, float]]:
+    """Calcula as posições dos nós usando algoritmos do NetworkX."""
+    if show_path_only or len(G.nodes) <= 3:
+        n = len(path)
+        if n == 0:
+            return {}
+        positions = {}
+        for i, node in enumerate(path):
+            positions[node] = (i / max(n - 1, 1) * 2 - 1, 0.0)
+        return positions
+
+    fixed_pos = {node: ((i / max(len(path) - 1, 1)) * 0.4 - 0.2, 0.0) for i, node in enumerate(path)}
+    pos = nx.spring_layout(
+        G,
+        pos=fixed_pos,
+        fixed=list(fixed_pos.keys()),
+        seed=42,
+        k=0.3,
+        iterations=80,
+    )
+    return {node: (float(x), float(y)) for node, (x, y) in pos.items()}
+
+
 def _build_pyvis_network(
     G: nx.DiGraph,
+    positions: dict[str, tuple[float, float]],
     title: str,
     height: str = "750px",
     width: str = "100%",
@@ -249,22 +331,13 @@ def _build_pyvis_network(
         notebook=False,
     )
 
-    # Configura física da simulação para um layout mais legível
+    # Física desabilitada: posições são pré-computadas no Python (nx.spring_layout).
+    # Com centenas de nós, o simulador vis.js nunca converge — os nós oscilam
+    # indefinidamente. Pré-computar e fixar as coordenadas elimina o problema.
     net.set_options("""
     {
       "physics": {
-        "enabled": true,
-        "barnesHut": {
-          "gravitationalConstant": -8000,
-          "centralGravity": 0.3,
-          "springLength": 120,
-          "springConstant": 0.04,
-          "damping": 0.09,
-          "avoidOverlap": 0.5
-        },
-        "stabilization": {
-          "iterations": 200
-        }
+        "enabled": false
       },
       "interaction": {
         "hover": true,
@@ -284,8 +357,10 @@ def _build_pyvis_network(
     }
     """)
 
-    # Transfere nós do NetworkX para o Pyvis
+    # Transfere nós do NetworkX para o Pyvis com posições fixas
+    SCALE = 1500  # escala em pixels para o canvas vis.js
     for node, attrs in G.nodes(data=True):
+        x, y = positions.get(node, (0.0, 0.0))
         net.add_node(
             node,
             label=node,
@@ -294,6 +369,9 @@ def _build_pyvis_network(
             shape=attrs.get("shape", "dot"),
             title=f"<b>{attrs.get('title', node)}</b>",
             font={"size": 12, "color": font_color},
+            x=x * SCALE,
+            y=y * SCALE,
+            physics=False,  # fixa o nó na posição calculada
         )
 
     # Transfere arestas do NetworkX para o Pyvis
@@ -310,6 +388,91 @@ def _build_pyvis_network(
 
 
 # ===========================================================================
+# Pós-processamento do HTML gerado
+# ===========================================================================
+
+def _compute_layout(
+    G: nx.DiGraph,
+    path: list[str],
+    show_path_only: bool,
+) -> dict[str, tuple[float, float]]:
+    """Calcula as posições dos nós usando algoritmos do NetworkX.
+
+    Para o Modo 1 (caminho mínimo): posiciona os nós linearmente da
+    esquerda para a direita, em uma linha reta simples.
+
+    Para o Modo 2 (árvore de exploração): usa spring_layout (Fruchterman-
+    Reingold). Os nós do caminho são fixados no centro para atraírem os
+    explorados ao redor, produzindo um layout mais legível.
+
+    Args:
+        G:              Grafo NetworkX já construído.
+        path:           Nós do caminho vencedor (para ancoragem no spring_layout).
+        show_path_only: Define qual algoritmo de layout usar.
+
+    Returns:
+        Dicionário { título_do_nó → (x, y) } com coordenadas normalizadas.
+    """
+    if show_path_only or len(G.nodes) <= 3:
+        # Layout linear simples para o caminho mínimo
+        n = len(path)
+        if n == 0:
+            return {}
+        positions = {}
+        for i, node in enumerate(path):
+            positions[node] = (i / max(n - 1, 1) * 2 - 1, 0.0)
+        return positions
+
+    # Layout radial sem dependência de scipy.
+    # Nós são colocados em anéis concêntricos conforme profundidade BFS da origem.
+    # Nós do caminho ficam fixados no centro; explorados formam anéis ao redor.
+    import math
+
+    path_set = set(path)
+
+    # BFS simples para calcular profundidade de cada nó a partir da origem
+    depth_map: dict[str, int] = {}
+    queue: list[tuple[str, int]] = [(path[0], 0)]
+    while queue:
+        node, d = queue.pop(0)
+        if node in depth_map:
+            continue
+        depth_map[node] = d
+        for nb in G.successors(node):
+            if nb not in depth_map:
+                queue.append((nb, d + 1))
+    # Nós não alcançados pela BFS da origem (lado BWD apenas) recebem profundidade máxima+1
+    max_depth = max(depth_map.values(), default=0)
+    for node in G.nodes:
+        if node not in depth_map:
+            depth_map[node] = max_depth + 1
+
+    # Agrupa nós por profundidade
+    rings: dict[int, list[str]] = {}
+    for node in G.nodes:
+        d = depth_map[node]
+        rings.setdefault(d, []).append(node)
+
+    positions: dict[str, tuple[float, float]] = {}
+
+    # Fixa nós do caminho em linha horizontal no centro (profundidade 0)
+    n_path = len(path)
+    for i, node in enumerate(path):
+        positions[node] = ((i / max(n_path - 1, 1)) * 0.5 - 0.25, 0.0)
+
+    # Distribui demais nós em anéis conforme profundidade
+    for depth, nodes_at_depth in sorted(rings.items()):
+        radius = depth * 0.3 + 0.5
+        other_nodes = [n for n in nodes_at_depth if n not in path_set]
+        n = len(other_nodes)
+        for j, node in enumerate(other_nodes):
+            angle = 2 * math.pi * j / max(n, 1)
+            positions[node] = (radius * math.cos(angle), radius * math.sin(angle))
+
+    return positions
+
+
+# ===========================================================================
 # Funções públicas da API do visualizador
 # ===========================================================================
 
@@ -319,6 +482,7 @@ def render_path(
     parents_bwd: dict[str, Optional[str]],
     output_file: str = "grafo.html",
     show_path_only: bool = False,
+    max_display_depth: int = 1,
 ) -> str:
     """Gera o arquivo HTML interativo do grafo Wikirace.
 
@@ -362,10 +526,11 @@ def render_path(
     )
 
     G, _classification = _build_networkx_graph(
-        path, parents_fwd, parents_bwd, show_path_only
+        path, parents_fwd, parents_bwd, show_path_only, max_display_depth
     )
 
-    net = _build_pyvis_network(G, title=html_title)
+    positions = _compute_layout(G, path, show_path_only)
+    net = _build_pyvis_network(G, positions=positions, title=html_title)
 
     # Persiste o HTML
     abs_output = os.path.abspath(output_file)
@@ -409,17 +574,23 @@ def render_exploration_tree(
     parents_fwd: dict[str, Optional[str]],
     parents_bwd: dict[str, Optional[str]],
     output_file: str = "grafo_exploracao.html",
+    max_display_depth: int = 1,
 ) -> str:
     """Atalho para o Modo 'Árvore de Exploração'.
 
-    Exibe todos os nós visitados pelas buscas FWD e BWD, com o caminho
-    vencedor destacado em cores vibrantes sobre o fundo cinza dos explorados.
+    Exibe os nós visitados pelas buscas FWD e BWD até ``max_display_depth``
+    passos de distância da origem ou do destino. Nós do caminho vencedor
+    são sempre incluídos. O padrão (1) exibe apenas os vizinhos imediatos,
+    que já é suficiente para visualizar a busca bidirecional na maioria dos casos.
 
     Args:
-        path:        Lista de títulos do caminho mais curto.
-        parents_fwd: Mapa de pais FWD (todos os nós visitados pela busca FWD).
-        parents_bwd: Mapa de pais BWD (todos os nós visitados pela busca BWD).
-        output_file: Arquivo HTML de saída.
+        path:              Lista de títulos do caminho mais curto.
+        parents_fwd:       Mapa de pais FWD (todos os nós visitados pela busca FWD).
+        parents_bwd:       Mapa de pais BWD (todos os nós visitados pela busca BWD).
+        output_file:       Arquivo HTML de saída.
+        max_display_depth: Profundidade máxima de nós exibidos (padrão: 1).
+                           Aumente para 2 ou mais para ver camadas mais profundas
+                           (aviso: o HTML pode ficar muito grande).
 
     Returns:
         Caminho absoluto do arquivo HTML gerado.
@@ -430,4 +601,5 @@ def render_exploration_tree(
         parents_bwd=parents_bwd,
         output_file=output_file,
         show_path_only=False,
+        max_display_depth=max_display_depth,
     )
