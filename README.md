@@ -4,7 +4,7 @@ Projeto academico da disciplina de Estruturas de Dados 2. Trata-se de um explora
 
 ## Demonstração Visual
 
-**Apresentação e Demonstração do Projeto (Vídeo):** [Link do YouTube]()
+**Apresentação e Demonstração do Projeto (Vídeo):** [Link do YouTube](https://www.youtube.com/watch?v=pSr-3ZgbfMc)
 
 ### 1. Terminal (Estatísticas e Execução)
 ![Execução no Terminal](examples/terminal.png)
